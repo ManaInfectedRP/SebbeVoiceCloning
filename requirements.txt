@@ -1,0 +1,27 @@
+# Core deep learning and voice cloning
+torch>=2.0.0
+torchaudio>=2.0.0
+numpy>=1.24.0
+
+# Voice cloning and TTS
+TTS>=0.22.0
+coqui-tts>=0.22.0
+
+# Speech recognition
+faster-whisper>=1.0.0
+
+# Translation
+deep-translator>=1.11.4
+
+# Audio/Video processing
+moviepy>=1.0.3
+pydub>=0.25.1
+ffmpeg-python>=0.2.0
+
+# Audio processing
+librosa>=0.10.0
+soundfile>=0.12.1
+
+# Utilities
+scipy>=1.11.0
+pyyaml>=6.0
