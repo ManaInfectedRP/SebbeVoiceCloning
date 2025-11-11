@@ -52,12 +52,12 @@ pip install -r requirements.txt
 
 Basic usage:
 ```bash
-python voice_clone_translator.py input_video.mp4 --target-lang es
+py voice_clone_translator.py input_video.mp4 --target-lang es
 ```
 
 Advanced options:
 ```bash
-python voice_clone_translator.py input_video.mp4 \
+py voice_clone_translator.py input_video.mp4 \
     --target-lang fr \
     --output-dir my_output \
     --device cuda
