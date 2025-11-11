@@ -70,17 +70,33 @@ class VoiceCloneTranslator:
         Returns:
             Path to extracted audio file
         """
-        from pydub import AudioSegment
-        import moviepy.editor as mp
+        import subprocess
         
         print(f"Extracting audio from {video_path}...")
         
         try:
-            # Extract audio using moviepy
-            video = mp.VideoFileClip(video_path)
-            audio = video.audio
-            audio.write_audiofile(output_audio_path, codec='pcm_s16le')
-            video.close()
+            # Extract audio using ffmpeg directly (more robust than moviepy)
+            command = [
+                'ffmpeg',
+                '-i', video_path,
+                '-vn',  # No video
+                '-acodec', 'pcm_s16le',  # PCM 16-bit
+                '-ar', '44100',  # 44.1kHz sample rate
+                '-ac', '2',  # Stereo
+                '-y',  # Overwrite output file
+                output_audio_path
+            ]
+            
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                print(f"FFmpeg error: {result.stderr}")
+                raise RuntimeError(f"Failed to extract audio: {result.stderr}")
             
             print(f"Audio extracted to {output_audio_path}")
             return output_audio_path
