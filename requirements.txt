@@ -13,6 +13,11 @@ faster-whisper>=1.0.0
 # Translation
 deep-translator>=1.11.4
 
+# Japanese text processing (required for TTS with Japanese)
+cutlet>=0.3.0
+fugashi>=1.3.0
+unidic-lite>=1.0.8
+
 # Audio/Video processing
 moviepy>=1.0.3
 pydub>=0.25.1

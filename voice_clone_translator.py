@@ -141,6 +141,68 @@ class VoiceCloneTranslator:
         print(f"Translation: {translated[:100]}...")
         return translated
     
+    def _split_text_by_length(self, text: str, max_length: int = 200, language: str = "en") -> list:
+        """
+        Split text into chunks that respect sentence boundaries.
+        
+        Args:
+            text: Text to split
+            max_length: Maximum character length per chunk
+            language: Language code to determine sentence boundaries
+            
+        Returns:
+            List of text chunks
+        """
+        # Define sentence delimiters based on language
+        if language in ['ja', 'zh']:
+            # Japanese and Chinese use different punctuation
+            delimiters = ['。', '！', '？', '、', '\n']
+        else:
+            delimiters = ['.', '!', '?', '\n', ';']
+        
+        # Split by sentences first
+        sentences = []
+        current_sentence = ""
+        
+        for char in text:
+            current_sentence += char
+            if char in delimiters:
+                sentences.append(current_sentence.strip())
+                current_sentence = ""
+        
+        if current_sentence.strip():
+            sentences.append(current_sentence.strip())
+        
+        # Group sentences into chunks under max_length
+        chunks = []
+        current_chunk = ""
+        
+        for sentence in sentences:
+            if len(current_chunk) + len(sentence) + 1 <= max_length:
+                current_chunk += (" " if current_chunk else "") + sentence
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                # If single sentence is too long, split it
+                if len(sentence) > max_length:
+                    words = sentence.split()
+                    temp_chunk = ""
+                    for word in words:
+                        if len(temp_chunk) + len(word) + 1 <= max_length:
+                            temp_chunk += (" " if temp_chunk else "") + word
+                        else:
+                            if temp_chunk:
+                                chunks.append(temp_chunk)
+                            temp_chunk = word
+                    current_chunk = temp_chunk
+                else:
+                    current_chunk = sentence
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        return chunks
+    
     def clone_voice(
         self,
         text: str,
@@ -150,6 +212,7 @@ class VoiceCloneTranslator:
     ) -> str:
         """
         Clone a voice and generate speech with the cloned voice.
+        Handles long texts by splitting them into chunks.
         
         Args:
             text: Text to synthesize
@@ -162,13 +225,86 @@ class VoiceCloneTranslator:
         """
         print(f"Cloning voice and synthesizing speech...")
         
-        # Generate speech with cloned voice
-        self.tts_model.tts_to_file(
-            text=text,
-            speaker_wav=speaker_audio_path,
-            language=language,
-            file_path=output_path
-        )
+        # Character limits for different languages (conservative estimates)
+        char_limits = {
+            'ja': 150,  # Japanese
+            'zh': 150,  # Chinese
+            'ko': 150,  # Korean
+            'ar': 150,  # Arabic
+            'default': 250
+        }
+        
+        max_chars = char_limits.get(language, char_limits['default'])
+        
+        try:
+            # Check if text needs to be split
+            if len(text) > max_chars:
+                print(f"Text length ({len(text)} chars) exceeds limit ({max_chars}). Splitting into chunks...")
+                
+                # Split text into manageable chunks
+                chunks = self._split_text_by_length(text, max_chars, language)
+                print(f"Split into {len(chunks)} chunks")
+                
+                # Generate audio for each chunk
+                import soundfile as sf
+                chunk_audios = []
+                
+                for i, chunk in enumerate(chunks):
+                    print(f"  Processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)...")
+                    temp_output = output_path.replace('.wav', f'_chunk_{i}.wav')
+                    
+                    self.tts_model.tts_to_file(
+                        text=chunk,
+                        speaker_wav=speaker_audio_path,
+                        language=language,
+                        file_path=temp_output
+                    )
+                    
+                    # Read the generated audio
+                    audio, sr = sf.read(temp_output)
+                    chunk_audios.append(audio)
+                    
+                    # Clean up temporary file
+                    os.remove(temp_output)
+                
+                # Concatenate all chunks
+                print("Combining audio chunks...")
+                combined_audio = np.concatenate(chunk_audios)
+                
+                # Save combined audio
+                sf.write(output_path, combined_audio, sr)
+                print(f"Combined {len(chunks)} chunks into final audio")
+                
+            else:
+                # Text is short enough, generate directly
+                self.tts_model.tts_to_file(
+                    text=text,
+                    speaker_wav=speaker_audio_path,
+                    language=language,
+                    file_path=output_path
+                )
+                
+        except RuntimeError as e:
+            if "MeCab" in str(e) and language == "ja":
+                print("\n⚠️  Warning: MeCab not found for Japanese processing.")
+                print("Attempting to use alternative method...")
+                
+                try:
+                    # Alternative: use English TTS as fallback
+                    print("Note: Falling back to English TTS. For proper Japanese support, install MeCab.")
+                    print("See: https://github.com/polm/fugashi#installation")
+                    
+                    self.tts_model.tts_to_file(
+                        text=text,
+                        speaker_wav=speaker_audio_path,
+                        language="en",  # Fallback to English
+                        file_path=output_path
+                    )
+                except Exception as fallback_error:
+                    print(f"Fallback also failed: {fallback_error}")
+                    raise
+            else:
+                raise
         
         print(f"Voice cloned audio saved to {output_path}")
         return output_path
