@@ -105,6 +105,65 @@ class VoiceCloneTranslator:
             print(f"Error extracting audio: {e}")
             raise
     
+    def convert_to_wav(self, input_path: str, output_path: str = None) -> str:
+        """
+        Convert any audio/video file to WAV format for voice cloning.
+        Supports MP3, MP4, AVI, MOV, MKV, FLAC, OGG, etc.
+        
+        Args:
+            input_path: Path to input audio/video file
+            output_path: Path for output WAV file (optional, auto-generated if None)
+            
+        Returns:
+            Path to converted WAV file
+        """
+        import subprocess
+        from pathlib import Path
+        
+        input_path = Path(input_path)
+        
+        # Check if already a WAV file
+        if input_path.suffix.lower() == '.wav':
+            print(f"File is already WAV format: {input_path}")
+            return str(input_path)
+        
+        # Generate output path if not provided
+        if output_path is None:
+            output_path = str(input_path.with_suffix('.wav'))
+        
+        print(f"Converting {input_path.suffix} to WAV format...")
+        
+        try:
+            # Convert using ffmpeg
+            command = [
+                'ffmpeg',
+                '-i', str(input_path),
+                '-vn',  # No video
+                '-acodec', 'pcm_s16le',  # PCM 16-bit
+                '-ar', '22050',  # 22.05kHz (good for voice)
+                '-ac', '1',  # Mono (better for voice cloning)
+                '-y',  # Overwrite output file
+                output_path
+            ]
+            
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            if result.returncode != 0:
+                print(f"FFmpeg error: {result.stderr}")
+                raise RuntimeError(f"Failed to convert audio: {result.stderr}")
+            
+            print(f"✅ Converted to: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            print(f"Error converting audio: {e}")
+            raise
+    
     def transcribe_audio(self, audio_path: str) -> dict:
         """
         Transcribe audio to text using Faster Whisper.
@@ -145,6 +204,22 @@ class VoiceCloneTranslator:
             text: Text to translate
             source_lang: Source language code (e.g., 'en', 'es', 'fr')
             target_lang: Target language code
+            en - English
+            es - Spanish
+            fr - French
+            de - German
+            it - Italian
+            pt - Portuguese
+            pl - Polish
+            tr - Turkish
+            ru - Russian
+            nl - Dutch
+            cs - Czech
+            ar - Arabic
+            zh-cn - Chinese (Simplified)
+            ja - Japanese
+            hu - Hungarian
+            ko - Korean
             
         Returns:
             Translated text
@@ -224,7 +299,8 @@ class VoiceCloneTranslator:
         text: str,
         speaker_audio_path: str,
         output_path: str,
-        language: str = "en"
+        language: str = "en",
+        clear_cache: bool = False
     ) -> str:
         """
         Clone a voice and generate speech with the cloned voice.
@@ -235,11 +311,24 @@ class VoiceCloneTranslator:
             speaker_audio_path: Path to reference audio for voice cloning
             output_path: Path for output synthesized audio
             language: Language code for synthesis
+            clear_cache: Force clear model cache (helps with language consistency)
             
         Returns:
             Path to generated audio file
         """
         print(f"Cloning voice and synthesizing speech...")
+        print(f"  Target language: {language}")
+        
+        # Clear CUDA cache if requested (helps prevent language mixing on reused references)
+        if clear_cache and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print(f"  🔄 Cleared GPU cache for consistent generation")
+        
+        # Validate language is supported
+        if self.tts_model and hasattr(self.tts_model, 'languages'):
+            if language not in self.tts_model.languages:
+                print(f"  ⚠️ Warning: '{language}' might not be supported. Available: {self.tts_model.languages}")
+                print(f"  ⚠️ Forcing language to: {language}")
         
         # Character limits for different languages (conservative estimates)
         char_limits = {
@@ -266,15 +355,35 @@ class VoiceCloneTranslator:
                 chunk_audios = []
                 
                 for i, chunk in enumerate(chunks):
-                    print(f"  Processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars)...")
+                    print(f"  Processing chunk {i+1}/{len(chunks)} ({len(chunk)} chars) in {language}...")
                     temp_output = output_path.replace('.wav', f'_chunk_{i}.wav')
                     
-                    self.tts_model.tts_to_file(
-                        text=chunk,
-                        speaker_wav=speaker_audio_path,
-                        language=language,
-                        file_path=temp_output
-                    )
+                    # Try using tts() for better control
+                    try:
+                        wav = self.tts_model.tts(
+                            text=chunk,
+                            speaker_wav=speaker_audio_path,
+                            language=language,
+                            split_sentences=False
+                        )
+                        sf.write(temp_output, wav, 24000)
+                    except (TypeError, AttributeError):
+                        # Fallback to tts_to_file
+                        try:
+                            self.tts_model.tts_to_file(
+                                text=chunk,
+                                speaker_wav=speaker_audio_path,
+                                language=language,
+                                file_path=temp_output,
+                                split_sentences=False
+                            )
+                        except TypeError:
+                            self.tts_model.tts_to_file(
+                                text=chunk,
+                                speaker_wav=speaker_audio_path,
+                                language=language,
+                                file_path=temp_output
+                            )
                     
                     # Read the generated audio
                     audio, sr = sf.read(temp_output)
@@ -293,12 +402,41 @@ class VoiceCloneTranslator:
                 
             else:
                 # Text is short enough, generate directly
-                self.tts_model.tts_to_file(
-                    text=text,
-                    speaker_wav=speaker_audio_path,
-                    language=language,
-                    file_path=output_path
-                )
+                print(f"  Generating speech in language: {language}")
+                
+                # Use tts() method for more control, then save manually
+                try:
+                    print(f"  Using advanced generation mode for better language control...")
+                    # Generate audio directly (returns numpy array)
+                    wav = self.tts_model.tts(
+                        text=text,
+                        speaker_wav=speaker_audio_path,
+                        language=language,
+                        split_sentences=False  # Prevent per-sentence language detection
+                    )
+                    
+                    # Save to file
+                    import soundfile as sf
+                    sf.write(output_path, wav, 24000)  # XTTS uses 24kHz
+                    
+                except (TypeError, AttributeError):
+                    # Fallback to tts_to_file if tts() doesn't work as expected
+                    print(f"  Using fallback generation mode...")
+                    try:
+                        self.tts_model.tts_to_file(
+                            text=text,
+                            speaker_wav=speaker_audio_path,
+                            language=language,
+                            file_path=output_path,
+                            split_sentences=False
+                        )
+                    except TypeError:
+                        self.tts_model.tts_to_file(
+                            text=text,
+                            speaker_wav=speaker_audio_path,
+                            language=language,
+                            file_path=output_path
+                        )
                 
         except RuntimeError as e:
             if "MeCab" in str(e) and language == "ja":
@@ -325,19 +463,278 @@ class VoiceCloneTranslator:
         print(f"Voice cloned audio saved to {output_path}")
         return output_path
     
+    def synthesize_from_text_file(
+        self,
+        text_file_path: str,
+        reference_audio_path: str,
+        output_audio_path: str,
+        language: str = "en"
+    ) -> str:
+        """
+        Generate speech from a text file using a reference audio for voice cloning.
+        
+        Args:
+            text_file_path: Path to text file containing the text to synthesize
+            reference_audio_path: Path to reference audio for voice cloning
+            output_audio_path: Path for output synthesized audio
+            language: Language code for synthesis
+            en - English
+            es - Spanish
+            fr - French
+            de - German
+            it - Italian
+            pt - Portuguese
+            pl - Polish
+            tr - Turkish
+            ru - Russian
+            nl - Dutch
+            cs - Czech
+            ar - Arabic
+            zh-cn - Chinese (Simplified)
+            ja - Japanese
+            hu - Hungarian
+            ko - Korean
+            
+        Returns:
+            Path to generated audio file
+        """
+        # Read text from file
+        print(f"Reading text from {text_file_path}...")
+        with open(text_file_path, 'r', encoding='utf-8') as f:
+            text = f.read().strip()
+        
+        if not text:
+            raise ValueError("Text file is empty!")
+        
+        print(f"Text length: {len(text)} characters")
+        
+        # Verify reference audio exists
+        if not os.path.exists(reference_audio_path):
+            raise FileNotFoundError(f"Reference audio not found: {reference_audio_path}")
+        
+        # Auto-convert to WAV if needed
+        if not reference_audio_path.lower().endswith('.wav'):
+            print(f"Reference audio is {Path(reference_audio_path).suffix}, converting to WAV...")
+            converted_path = os.path.join(
+                os.path.dirname(output_audio_path) or "output",
+                f"_temp_reference_{Path(reference_audio_path).stem}.wav"
+            )
+            reference_audio_path = self.convert_to_wav(reference_audio_path, converted_path)
+        
+        # Generate speech with cloned voice
+        result = self.clone_voice(
+            text=text,
+            speaker_audio_path=reference_audio_path,
+            output_path=output_audio_path,
+            language=language
+        )
+        
+        # Clean up temporary converted file if it was created
+        if "_temp_reference_" in reference_audio_path and os.path.exists(reference_audio_path):
+            try:
+                os.remove(reference_audio_path)
+                print(f"Cleaned up temporary file: {reference_audio_path}")
+            except:
+                pass
+        
+        return result
+    
+    def batch_synthesize_multi_voice(
+        self,
+        text_voice_pairs: list,
+        output_dir: str = "output",
+        language: str = "en",
+        combined_output: str = None,
+        add_silence: float = 0.5
+    ) -> dict:
+        """
+        Generate speech from multiple text files using different voices and combine them.
+        
+        Args:
+            text_voice_pairs: List of tuples [(text_file_1, reference_audio_1), (text_file_2, reference_audio_2), ...]
+                            OR [(text_file_1, reference_audio_1, language_1), (text_file_2, reference_audio_2, language_2), ...]
+            output_dir: Directory for output files
+            language: Default language code for synthesis (used if not specified per-pair)
+            combined_output: Path for combined audio file (default: output_dir/combined_voices.wav)
+            add_silence: Seconds of silence to add between speakers (default: 0.5)
+            
+        Returns:
+            Dictionary with paths to individual and combined audio files
+        """
+        import soundfile as sf
+        
+        print("\n" + "="*60)
+        print("Multi-Voice Batch Processing")
+        print("="*60)
+        print(f"Processing {len(text_voice_pairs)} text-voice pairs")
+        print(f"Default Language: {language}")
+        print("="*60 + "\n")
+        
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Pre-convert all unique reference audio files to WAV (prevents re-conversion issues)
+        print("Pre-converting reference audio files...")
+        reference_audio_cache = {}  # Cache converted references
+        unique_references = set()
+        
+        for pair in text_voice_pairs:
+            reference_audio = pair[1]  # Second element is always reference audio
+            unique_references.add(reference_audio)
+        
+        for ref_audio in unique_references:
+            if not ref_audio.lower().endswith('.wav'):
+                print(f"  Converting: {Path(ref_audio).name}")
+                converted_path = os.path.join(output_dir, f"_cached_ref_{Path(ref_audio).stem}.wav")
+                reference_audio_cache[ref_audio] = self.convert_to_wav(ref_audio, converted_path)
+            else:
+                reference_audio_cache[ref_audio] = ref_audio
+        
+        print(f"  Cached {len(reference_audio_cache)} unique reference files\n")
+        
+        individual_outputs = []
+        audio_segments = []
+        sample_rate = None
+        reference_usage_count = {}  # Track how many times each reference is used
+        
+        for i, pair in enumerate(text_voice_pairs, 1):
+            # Support both 2-tuple and 3-tuple formats
+            if len(pair) == 2:
+                text_file, reference_audio = pair
+                segment_language = language  # Use default
+            elif len(pair) == 3:
+                text_file, reference_audio, segment_language = pair
+            else:
+                raise ValueError(f"Invalid pair format at index {i}. Expected (text, audio) or (text, audio, language)")
+            
+            print(f"\n[{i}/{len(text_voice_pairs)}] Processing: {text_file}")
+            print(f"  Voice reference: {reference_audio}")
+            print(f"  Language: {segment_language}")
+            
+            # Generate output filename
+            text_file_name = Path(text_file).stem
+            output_path = os.path.join(output_dir, f"voice_{i}_{text_file_name}.wav")
+            
+            # Use cached (pre-converted) reference audio
+            cached_reference = reference_audio_cache.get(reference_audio, reference_audio)
+            
+            # Track reference usage
+            reference_usage_count[reference_audio] = reference_usage_count.get(reference_audio, 0) + 1
+            usage_count = reference_usage_count[reference_audio]
+            
+            print(f"  Using cached reference: {Path(cached_reference).name} (use #{usage_count})")
+            
+            # Clear cache on 2nd+ use of same reference (prevents language mixing)
+            should_clear_cache = usage_count > 1
+            if should_clear_cache:
+                print(f"  🔄 Clearing GPU cache (reused reference)")
+            
+            # Read text directly and call clone_voice (bypass synthesize_from_text_file to avoid re-conversion)
+            with open(text_file, 'r', encoding='utf-8') as f:
+                text = f.read().strip()
+            
+            if not text:
+                raise ValueError(f"Text file is empty: {text_file}")
+            
+            # Generate speech directly with cached reference
+            self.clone_voice(
+                text=text,
+                speaker_audio_path=cached_reference,  # Use pre-converted WAV
+                output_path=output_path,
+                language=segment_language,
+                clear_cache=should_clear_cache  # Clear cache for reused references
+            )
+            
+            individual_outputs.append(output_path)
+            
+            # Read the generated audio for combining
+            audio_data, sr = sf.read(output_path)
+            if sample_rate is None:
+                sample_rate = sr
+            elif sample_rate != sr:
+                # Resample if needed (shouldn't happen with same TTS model)
+                print(f"  Warning: Sample rate mismatch ({sr} vs {sample_rate})")
+            
+            audio_segments.append(audio_data)
+            
+            # Add silence between speakers (except after last one)
+            if i < len(text_voice_pairs) and add_silence > 0:
+                silence_samples = int(sample_rate * add_silence)
+                silence = np.zeros(silence_samples)
+                audio_segments.append(silence)
+                print(f"  Added {add_silence}s silence")
+        
+        # Combine all audio segments
+        print("\n" + "-"*60)
+        print("Combining all audio segments...")
+        combined_audio = np.concatenate(audio_segments)
+        
+        # Save combined audio
+        if combined_output is None:
+            combined_output = os.path.join(output_dir, "combined_voices.wav")
+        
+        sf.write(combined_output, combined_audio, sample_rate)
+        print(f"Combined audio saved to: {combined_output}")
+        
+        results = {
+            'individual_files': individual_outputs,
+            'combined_file': combined_output,
+            'total_duration': len(combined_audio) / sample_rate,
+            'sample_rate': sample_rate,
+            'num_voices': len(text_voice_pairs)
+        }
+        
+        # Clean up cached reference files
+        print("\nCleaning up cached reference files...")
+        for original_ref, cached_ref in reference_audio_cache.items():
+            if "_cached_ref_" in cached_ref and os.path.exists(cached_ref):
+                try:
+                    os.remove(cached_ref)
+                    print(f"  Removed: {Path(cached_ref).name}")
+                except Exception as e:
+                    print(f"  Warning: Could not remove {cached_ref}: {e}")
+        
+        print("\n" + "="*60)
+        print("Multi-Voice Processing Complete!")
+        print("="*60)
+        print(f"Individual files: {len(individual_outputs)}")
+        for idx, file in enumerate(individual_outputs, 1):
+            print(f"  {idx}. {file}")
+        print(f"\nCombined file: {combined_output}")
+        print(f"Total duration: {results['total_duration']:.2f} seconds")
+        print("="*60 + "\n")
+        
+        return results
+    
     def process_pipeline(
         self,
         input_path: str,
         target_language: str = "es",
         output_dir: str = "output",
-        keep_intermediates: bool = True
+        keep_intermediates: bool = True,
+        save_reference_audio: bool = True
     ) -> dict:
         """
         Complete pipeline: extract audio, transcribe, translate, and clone voice.
         
         Args:
             input_path: Path to input video/audio file
-            target_language: Target language for translation (e.g., 'es', 'fr', 'de')
+            target_language: Target language for translation
+            en - English
+            es - Spanish
+            fr - French
+            de - German
+            it - Italian
+            pt - Portuguese
+            pl - Polish
+            tr - Turkish
+            ru - Russian
+            nl - Dutch
+            cs - Czech
+            ar - Arabic
+            zh-cn - Chinese (Simplified)
+            ja - Japanese
+            hu - Hungarian
+            ko - Korean
             output_dir: Directory for output files
             keep_intermediates: Whether to keep intermediate files
             
@@ -379,6 +776,16 @@ class VoiceCloneTranslator:
             f.write(f"Target Language: {target_language}\n")
             f.write(f"Translation:\n{translated_text}\n")
         
+        # Save reference audio for future use
+        reference_audio_path = None
+        if save_reference_audio:
+            reference_audio_path = os.path.join(output_dir, f"{base_name}_reference_voice.wav")
+            if audio_path != reference_audio_path:
+                import shutil
+                shutil.copy(audio_path, reference_audio_path)
+                print(f"Reference audio saved to: {reference_audio_path}")
+                print("You can use this audio file later for voice cloning with custom text!")
+        
         # Step 4: Clone voice and synthesize in target language
         cloned_output_path = os.path.join(output_dir, f"{base_name}_cloned_{target_language}.wav")
         self.clone_voice(
@@ -390,6 +797,7 @@ class VoiceCloneTranslator:
         
         results = {
             'original_audio': audio_path,
+            'reference_audio': reference_audio_path,
             'transcript_file': transcript_path,
             'translation_file': translation_path,
             'cloned_audio': cloned_output_path,
@@ -414,18 +822,88 @@ def main():
     """Example usage of the VoiceCloneTranslator."""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Voice Cloning with Translation")
-    parser.add_argument("input", help="Input video/audio file path")
+    parser = argparse.ArgumentParser(
+        description="Voice Cloning with Translation",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Full pipeline: video -> transcribe -> translate -> clone
+  python voice_clone_translator.py video.mp4 --target-lang es
+  
+  # Generate speech from text file using saved reference audio
+  python voice_clone_translator.py --text-mode my_text.txt --reference-audio output/speaker_reference_voice.wav --language en --output my_speech.wav
+        """
+    )
+    
+    # Mode selection
+    parser.add_argument(
+        "--text-mode",
+        action="store_true",
+        help="Text-to-speech mode: Generate speech from a text file using reference audio"
+    )
+    parser.add_argument(
+        "--multi-voice",
+        action="store_true",
+        help="Multi-voice mode: Process multiple text files with different voices"
+    )
+    parser.add_argument(
+        "--list-languages",
+        action="store_true",
+        help="List all supported languages and exit"
+    )
+    
+    # Main input (video/audio for pipeline mode, text file for text mode)
+    parser.add_argument(
+        "input",
+        nargs="?",
+        help="Input video/audio file (pipeline mode) or text file (text mode)"
+    )
+    
+    # Pipeline mode arguments
     parser.add_argument(
         "--target-lang",
         default="es",
-        help="Target language code (e.g., es, fr, de, it, pt)"
+        help="Target language code for translation (e.g., es, fr, de, it, pt, ja)"
     )
     parser.add_argument(
         "--output-dir",
         default="output",
-        help="Output directory for generated files"
+        help="Output directory for generated files (pipeline mode)"
     )
+    
+    # Text mode arguments
+    parser.add_argument(
+        "--reference-audio",
+        help="Path to reference audio for voice cloning (text mode)"
+    )
+    parser.add_argument(
+        "--language",
+        default="en",
+        help="Language code for synthesis (text mode, e.g., en, es, fr, de, ja)"
+    )
+    parser.add_argument(
+        "--output",
+        help="Output audio file path (text mode)"
+    )
+    
+    # Multi-voice mode arguments
+    parser.add_argument(
+        "--pairs",
+        nargs="+",
+        help="Text-voice pairs in format: text1.txt,voice1.wav text2.txt,voice2.wav (multi-voice mode)"
+    )
+    parser.add_argument(
+        "--silence",
+        type=float,
+        default=0.5,
+        help="Seconds of silence between speakers in combined audio (default: 0.5)"
+    )
+    parser.add_argument(
+        "--combined-output",
+        help="Path for combined audio file (multi-voice mode)"
+    )
+    
+    # Common arguments
     parser.add_argument(
         "--device",
         choices=["cpu", "cuda"],
@@ -435,20 +913,78 @@ def main():
     
     args = parser.parse_args()
     
-    # Initialize and run
+    # Initialize
     cloner = VoiceCloneTranslator(device=args.device)
     cloner.setup_models()
     
-    results = cloner.process_pipeline(
-        input_path=args.input,
-        target_language=args.target_lang,
-        output_dir=args.output_dir
-    )
+    # List languages mode
+    if args.list_languages:
+        cloner.list_supported_languages()
+        return
     
-    print("\nGenerated files:")
-    for key, value in results.items():
-        if key.endswith('_file') or key.endswith('_audio'):
-            print(f"  {key}: {value}")
+    if args.multi_voice:
+        # Multi-voice mode
+        if not args.pairs:
+            parser.error("--pairs is required in multi-voice mode")
+        
+        # Parse pairs (format: text1.txt,voice1.wav text2.txt,voice2.wav)
+        text_voice_pairs = []
+        for pair in args.pairs:
+            parts = pair.split(',')
+            if len(parts) != 2:
+                parser.error(f"Invalid pair format: {pair}. Use: text.txt,voice.wav")
+            text_file, voice_file = parts
+            text_voice_pairs.append((text_file.strip(), voice_file.strip()))
+        
+        results = cloner.batch_synthesize_multi_voice(
+            text_voice_pairs=text_voice_pairs,
+            output_dir=args.output_dir,
+            language=args.language,
+            combined_output=args.combined_output,
+            add_silence=args.silence
+        )
+        
+    elif args.text_mode:
+        # Text-to-speech mode
+        if not args.input:
+            parser.error("Text file path is required in text mode")
+        if not args.reference_audio:
+            parser.error("--reference-audio is required in text mode")
+        if not args.output:
+            parser.error("--output is required in text mode")
+        
+        print("\n" + "="*50)
+        print("Text-to-Speech Mode")
+        print("="*50)
+        
+        output_path = cloner.synthesize_from_text_file(
+            text_file_path=args.input,
+            reference_audio_path=args.reference_audio,
+            output_audio_path=args.output,
+            language=args.language
+        )
+        
+        print("\n" + "="*50)
+        print("Text-to-Speech Complete!")
+        print("="*50)
+        print(f"Generated audio: {output_path}")
+        print("="*50 + "\n")
+        
+    else:
+        # Full pipeline mode
+        if not args.input:
+            parser.error("Input file path is required")
+        
+        results = cloner.process_pipeline(
+            input_path=args.input,
+            target_language=args.target_lang,
+            output_dir=args.output_dir
+        )
+        
+        print("\nGenerated files:")
+        for key, value in results.items():
+            if value and (key.endswith('_file') or key.endswith('_audio')):
+                print(f"  {key}: {value}")
 
 
 if __name__ == "__main__":
