@@ -579,9 +579,11 @@ class VoiceCloneTranslator:
                 print(f"  ⚠️ Forcing language to: {language}")
         
         try:
-            # Process text without length limits
-            if False:  # Disabled chunking - process full text
-                print(f"Text length ({len(text)} chars) exceeds limit ({max_chars}). Splitting into chunks...")
+            # Check if text needs chunking (XTTS has 400 token limit ≈ 250-300 chars)
+            max_chars = 250  # Conservative limit to stay under 400 tokens
+            
+            if len(text) > max_chars:
+                print(f"Text length ({len(text)} chars) exceeds safe limit ({max_chars}). Splitting into chunks...")
                 
                 # Split text into manageable chunks
                 chunks = self._split_text_by_length(text, max_chars, language)
