@@ -58,6 +58,254 @@ class VoiceCloneTranslator:
         self.translator = GoogleTranslator
         
         print("All models loaded successfully!")
+    
+    def validate_input_file(self, filepath: str, file_type: str = "audio/video") -> dict:
+        """
+        Validate input file before processing.
+        
+        Args:
+            filepath: Path to file to validate
+            file_type: Type of file expected ('audio/video', 'audio', 'text')
+            
+        Returns:
+            Dictionary with validation results
+        """
+        result = {
+            'valid': False,
+            'exists': False,
+            'size_mb': 0,
+            'extension': '',
+            'warnings': [],
+            'errors': []
+        }
+        
+        filepath = Path(filepath)
+        
+        # Check if file exists
+        if not filepath.exists():
+            result['errors'].append(f"File not found: {filepath}")
+            return result
+        
+        result['exists'] = True
+        
+        # Check if it's a file (not directory)
+        if not filepath.is_file():
+            result['errors'].append(f"Path is not a file: {filepath}")
+            return result
+        
+        # Get file size
+        size_bytes = filepath.stat().st_size
+        size_mb = size_bytes / (1024 * 1024)
+        result['size_mb'] = size_mb
+        
+        # Check file size
+        if size_mb == 0:
+            result['errors'].append("File is empty (0 bytes)")
+            return result
+        
+        if size_mb > 500:
+            result['warnings'].append(f"Large file ({size_mb:.1f} MB). Processing may take a while...")
+        
+        # Check file extension
+        extension = filepath.suffix.lower()
+        result['extension'] = extension
+        
+        # Validate extension based on file type
+        if file_type == "audio/video":
+            valid_extensions = ['.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv', '.flac', '.ogg', '.m4a', '.webm']
+            if extension not in valid_extensions:
+                result['warnings'].append(
+                    f"Unusual extension '{extension}'. Supported: {', '.join(valid_extensions)}"
+                )
+        elif file_type == "audio":
+            valid_extensions = ['.mp3', '.wav', '.flac', '.ogg', '.m4a']
+            if extension not in valid_extensions:
+                result['warnings'].append(
+                    f"Unusual audio extension '{extension}'. Supported: {', '.join(valid_extensions)}"
+                )
+        elif file_type == "text":
+            valid_extensions = ['.txt', '.md']
+            if extension not in valid_extensions:
+                result['errors'].append(
+                    f"Invalid text file extension '{extension}'. Use .txt or .md"
+                )
+                return result
+        
+        # File is valid if no errors
+        result['valid'] = len(result['errors']) == 0
+        
+        return result
+    
+    def print_validation_result(self, validation: dict, filepath: str):
+        """Print validation results in a user-friendly format."""
+        if not validation['exists']:
+            print(f"\n❌ ERROR: File not found!")
+            print(f"   Path: {filepath}")
+            print(f"\n💡 Tip: Check if the file path is correct and the file exists.")
+            return
+        
+        if validation['errors']:
+            print(f"\n❌ ERROR: Invalid file!")
+            for error in validation['errors']:
+                print(f"   - {error}")
+            return
+        
+        if validation['warnings']:
+            print(f"\n⚠️  Warnings:")
+            for warning in validation['warnings']:
+                print(f"   - {warning}")
+        
+        print(f"✅ File validated: {Path(filepath).name} ({validation['size_mb']:.1f} MB)")
+    
+    def process_directory(
+        self,
+        input_dir: str,
+        target_language: str = "es",
+        output_dir: str = "output",
+        file_extensions: list = None,
+        recursive: bool = False,
+        save_reference_audio: bool = True
+    ) -> dict:
+        """
+        Process all audio/video files in a directory.
+        
+        Args:
+            input_dir: Directory containing input files
+            target_language: Target language for translation
+            output_dir: Output directory for generated files
+            file_extensions: List of extensions to process (default: common audio/video formats)
+            recursive: Whether to search subdirectories
+            save_reference_audio: Whether to save reference audio for each file
+            
+        Returns:
+            Dictionary with processing results
+        """
+        print("\n" + "="*70)
+        print("BATCH PROCESSING MODE")
+        print("="*70)
+        
+        if file_extensions is None:
+            file_extensions = ['.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv', '.flac', '.ogg', '.m4a']
+        
+        input_path = Path(input_dir)
+        
+        # Validate input directory
+        if not input_path.exists():
+            print(f"❌ ERROR: Directory not found: {input_dir}")
+            return {'success': False, 'error': 'Directory not found'}
+        
+        if not input_path.is_dir():
+            print(f"❌ ERROR: Path is not a directory: {input_dir}")
+            return {'success': False, 'error': 'Not a directory'}
+        
+        # Find all matching files
+        if recursive:
+            files = [f for ext in file_extensions for f in input_path.rglob(f'*{ext}')]
+        else:
+            files = [f for ext in file_extensions for f in input_path.glob(f'*{ext}')]
+        
+        if not files:
+            print(f"\n❌ No files found with extensions: {', '.join(file_extensions)}")
+            print(f"   In directory: {input_dir}")
+            return {'success': False, 'error': 'No matching files found'}
+        
+        print(f"\n📁 Found {len(files)} file(s) to process")
+        print(f"🌍 Target language: {target_language}")
+        print(f"📂 Output directory: {output_dir}")
+        print("="*70 + "\n")
+        
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Process each file
+        results = {
+            'total': len(files),
+            'successful': [],
+            'failed': [],
+            'skipped': []
+        }
+        
+        for i, file_path in enumerate(files, 1):
+            print(f"\n{'='*70}")
+            print(f"Processing [{i}/{len(files)}]: {file_path.name}")
+            print(f"{'='*70}")
+            
+            try:
+                # Validate file
+                validation = self.validate_input_file(str(file_path), "audio/video")
+                
+                if not validation['valid']:
+                    print(f"❌ Skipping invalid file: {file_path.name}")
+                    for error in validation['errors']:
+                        print(f"   - {error}")
+                    results['skipped'].append({
+                        'file': str(file_path),
+                        'reason': validation['errors']
+                    })
+                    continue
+                
+                self.print_validation_result(validation, str(file_path))
+                
+                # Create subdirectory for this file's outputs
+                file_output_dir = os.path.join(output_dir, file_path.stem)
+                os.makedirs(file_output_dir, exist_ok=True)
+                
+                # Process the file
+                result = self.process_pipeline(
+                    input_path=str(file_path),
+                    target_language=target_language,
+                    output_dir=file_output_dir,
+                    save_reference_audio=save_reference_audio
+                )
+                
+                results['successful'].append({
+                    'file': str(file_path),
+                    'output': result
+                })
+                
+                print(f"\n✅ Successfully processed: {file_path.name}")
+                
+            except KeyboardInterrupt:
+                print(f"\n\n⚠️  Batch processing interrupted by user!")
+                print(f"   Processed {len(results['successful'])} of {len(files)} files")
+                break
+                
+            except Exception as e:
+                print(f"\n❌ Error processing {file_path.name}: {e}")
+                results['failed'].append({
+                    'file': str(file_path),
+                    'error': str(e)
+                })
+                continue
+        
+        # Print summary
+        print("\n" + "="*70)
+        print("BATCH PROCESSING SUMMARY")
+        print("="*70)
+        print(f"Total files: {results['total']}")
+        print(f"✅ Successful: {len(results['successful'])}")
+        print(f"❌ Failed: {len(results['failed'])}")
+        print(f"⏭️  Skipped: {len(results['skipped'])}")
+        
+        if results['successful']:
+            print(f"\n✅ Successfully processed files:")
+            for item in results['successful']:
+                print(f"   - {Path(item['file']).name}")
+        
+        if results['failed']:
+            print(f"\n❌ Failed files:")
+            for item in results['failed']:
+                print(f"   - {Path(item['file']).name}: {item['error']}")
+        
+        if results['skipped']:
+            print(f"\n⏭️  Skipped files:")
+            for item in results['skipped']:
+                print(f"   - {Path(item['file']).name}")
+        
+        print("="*70 + "\n")
+        
+        results['success'] = True
+        return results
         
     def extract_audio_from_mp4(self, video_path: str, output_audio_path: str) -> str:
         """
@@ -487,6 +735,18 @@ class VoiceCloneTranslator:
         Returns:
             Path to generated audio file
         """
+        # Validate text file
+        text_validation = self.validate_input_file(text_file_path, "text")
+        if not text_validation['valid']:
+            self.print_validation_result(text_validation, text_file_path)
+            raise ValueError(f"Invalid text file: {text_validation['errors']}")
+        
+        # Validate reference audio
+        audio_validation = self.validate_input_file(reference_audio_path, "audio/video")
+        if not audio_validation['valid']:
+            self.print_validation_result(audio_validation, reference_audio_path)
+            raise ValueError(f"Invalid reference audio: {audio_validation['errors']}")
+        
         # Read text from file
         print(f"Reading text from {text_file_path}...")
         with open(text_file_path, 'r', encoding='utf-8') as f:
@@ -496,10 +756,6 @@ class VoiceCloneTranslator:
             raise ValueError("Text file is empty!")
         
         print(f"Text length: {len(text)} characters")
-        
-        # Verify reference audio exists
-        if not os.path.exists(reference_audio_path):
-            raise FileNotFoundError(f"Reference audio not found: {reference_audio_path}")
         
         # Auto-convert to WAV if needed
         if not reference_audio_path.lower().endswith('.wav'):
@@ -730,6 +986,13 @@ class VoiceCloneTranslator:
         Returns:
             Dictionary with paths to all generated files
         """
+        # Validate input file
+        validation = self.validate_input_file(input_path, "audio/video")
+        self.print_validation_result(validation, input_path)
+        
+        if not validation['valid']:
+            raise ValueError(f"Invalid input file: {validation['errors']}")
+        
         # Create output directory
         os.makedirs(output_dir, exist_ok=True)
         
@@ -819,6 +1082,12 @@ Examples:
   # Full pipeline: video -> transcribe -> translate -> clone
   python voice_clone_translator.py video.mp4 --target-lang es
   
+  # Batch process all files in a directory
+  python voice_clone_translator.py --batch my_videos/ --target-lang fr --output-dir batch_output
+  
+  # Batch process with specific extensions and recursive search
+  python voice_clone_translator.py --batch my_media/ --target-lang de --recursive --extensions .mp4 .mp3
+  
   # Generate speech from text file using saved reference audio
   python voice_clone_translator.py --text-mode my_text.txt --reference-audio output/speaker_reference_voice.wav --language en --output my_speech.wav
         """
@@ -834,6 +1103,11 @@ Examples:
         "--multi-voice",
         action="store_true",
         help="Multi-voice mode: Process multiple text files with different voices"
+    )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Batch mode: Process all audio/video files in a directory"
     )
     parser.add_argument(
         "--list-languages",
@@ -881,6 +1155,18 @@ Examples:
         nargs="+",
         help="Text-voice pairs in format: text1.txt,voice1.wav text2.txt,voice2.wav (multi-voice mode)"
     )
+    
+    # Batch mode arguments
+    parser.add_argument(
+        "--recursive",
+        action="store_true",
+        help="Process subdirectories recursively (batch mode)"
+    )
+    parser.add_argument(
+        "--extensions",
+        nargs="+",
+        help="File extensions to process (batch mode, e.g., .mp3 .mp4 .wav)"
+    )
     parser.add_argument(
         "--silence",
         type=float,
@@ -911,7 +1197,28 @@ Examples:
         cloner.list_supported_languages()
         return
     
-    if args.multi_voice:
+    if args.batch:
+        # Batch processing mode
+        if not args.input:
+            parser.error("Directory path is required in batch mode")
+        
+        # Parse extensions if provided
+        extensions = None
+        if args.extensions:
+            extensions = [ext if ext.startswith('.') else f'.{ext}' for ext in args.extensions]
+        
+        results = cloner.process_directory(
+            input_dir=args.input,
+            target_language=args.target_lang,
+            output_dir=args.output_dir,
+            file_extensions=extensions,
+            recursive=args.recursive
+        )
+        
+        if not results['success']:
+            exit(1)
+    
+    elif args.multi_voice:
         # Multi-voice mode
         if not args.pairs:
             parser.error("--pairs is required in multi-voice mode")

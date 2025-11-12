@@ -48,20 +48,39 @@ pip install -r requirements.txt
 
 ### Command Line
 
-Basic usage:
+#### Single File Processing
 ```bash
 py voice_clone_translator.py input_video.mp4 --target-lang es
 ```
 
+#### Batch Processing (Multiple Files)
+Process all audio/video files in a directory:
 ```bash
-py text_to_speech_example.py ( needs to modify reference_audio, text_file, output_audio)
+# Process all files in a directory
+py voice_clone_translator.py --batch my_videos/ --target-lang fr --output-dir batch_output
+
+# Process specific file types
+py voice_clone_translator.py --batch my_media/ --target-lang de --extensions .mp4 .mp3
+
+# Include subdirectories
+py voice_clone_translator.py --batch my_media/ --target-lang it --recursive
 ```
 
+#### Text-to-Speech Mode
 ```bash
-py mutli_voice_exaxmple.py ( needs to edit conversation [Array])
+py voice_clone_translator.py --text-mode my_text.txt \
+    --reference-audio reference_voice.mp3 \
+    --language en \
+    --output my_speech.wav
 ```
 
-Advanced options:
+#### Multi-Voice Conversations
+```bash
+py multi_voice_example.py
+# (edit conversation array in the script)
+```
+
+#### Advanced Options
 ```bash
 py voice_clone_translator.py input_video.mp4 \
     --target-lang fr \
