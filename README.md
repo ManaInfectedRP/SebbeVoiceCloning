@@ -54,6 +54,11 @@ Basic usage:
 ```bash
 py voice_clone_translator.py input_video.mp4 --target-lang es
 ```
+
+```bash
+py text_to_speech_example.py ( needs to modify reference_audio, text_file, output_audio)
+```
+
 ```bash
 py mutli_voice_exaxmple.py ( needs to edit conversation [Array])
 ```
