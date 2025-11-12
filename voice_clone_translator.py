@@ -330,20 +330,9 @@ class VoiceCloneTranslator:
                 print(f"  ⚠️ Warning: '{language}' might not be supported. Available: {self.tts_model.languages}")
                 print(f"  ⚠️ Forcing language to: {language}")
         
-        # Character limits for different languages (conservative estimates)
-        char_limits = {
-            'ja': 150,  # Japanese
-            'zh': 150,  # Chinese
-            'ko': 150,  # Korean
-            'ar': 150,  # Arabic
-            'default': 250
-        }
-        
-        max_chars = char_limits.get(language, char_limits['default'])
-        
         try:
-            # Check if text needs to be split
-            if len(text) > max_chars:
+            # Process text without length limits
+            if False:  # Disabled chunking - process full text
                 print(f"Text length ({len(text)} chars) exceeds limit ({max_chars}). Splitting into chunks...")
                 
                 # Split text into manageable chunks
