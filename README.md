@@ -44,8 +44,6 @@ pip install -r requirements.txt
 
 **Note**: First run will download models (~2GB), which may take some time.
 
-**For Japanese Support**: If you want to use Japanese (ja) as target language, see [JAPANESE_SETUP.md](JAPANESE_SETUP.md) for additional setup steps.
-
 ## Usage
 
 ### Command Line
