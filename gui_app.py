@@ -178,6 +178,7 @@ class VoiceCloneApp(tk.Tk):
             def _on_change(v, lbl=val_lbl, f=fmt): lbl.config(text=f.format(float(v)))
             sl = ttk.Scale(parent, variable=var, from_=from_, to=to, orient="horizontal",
                            length=200, command=_on_change)
+            sl.set(default)  # force visual position to match default value
             sl.grid(row=row, column=1, sticky="ew")
             return sl
 

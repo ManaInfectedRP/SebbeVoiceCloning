@@ -609,9 +609,17 @@ class VoiceCloneTranslator:
                 print(f"  ⚠️ Forcing language to: {language}")
         
         try:
+            import re
+            # Collapse line breaks into spaces so short poetic/lyric lines don't become
+            # individual tiny synthesis fragments (each with its own XTTS silence padding).
+            text = re.sub(r'\r\n|\r', '\n', text)          # normalise line endings
+            text = re.sub(r'\n{2,}', ' | ', text)          # blank lines → pause marker
+            text = re.sub(r'\n', ' ', text)                 # single newlines → space
+            text = re.sub(r'[ \t]{2,}', ' ', text).strip() # collapse extra spaces
+
             # Check if text needs chunking (XTTS has 400 token limit ≈ 250-300 chars)
             max_chars = 250  # Conservative limit to stay under 400 tokens
-            
+
             if len(text) > max_chars:
                 print(f"Text length ({len(text)} chars) exceeds safe limit ({max_chars}). Splitting into chunks...")
                 
