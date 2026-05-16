@@ -1,32 +1,34 @@
-# Core deep learning and voice cloning
+# Requires Python 3.11 (TTS package does not support 3.12+)
+# Create venv: py -3.11 -m venv venv311
+# Activate:    ./venv311/Scripts/activate  (or Activate.ps1 on PowerShell)
+# Install:     pip install -r requirements.txt
+
+# PyTorch with CUDA 12.6 (works with CUDA 13.x drivers too)
+--extra-index-url https://download.pytorch.org/whl/cu126
 torch>=2.0.0
 torchaudio>=2.0.0
 numpy>=1.24.0
 
-# Voice cloning and TTS
+# Voice cloning (Coqui TTS XTTS-v2)
 TTS>=0.22.0
-coqui-tts>=0.22.0
+transformers>=4.33.0,<4.41.0
 
-# Speech recognition
-faster-whisper>=1.0.0
-
-# Translation
-deep-translator>=1.11.4
-
-# Japanese text processing (required for TTS with Japanese)
+# Japanese text processing
 cutlet>=0.3.0
 fugashi>=1.3.0
 unidic-lite>=1.0.8
 
-# Audio/Video processing
+# Audio / video processing
 moviepy>=1.0.3
 pydub>=0.25.1
 ffmpeg-python>=0.2.0
-
-# Audio processing
 librosa>=0.10.0
 soundfile>=0.12.1
 
 # Utilities
 scipy>=1.11.0
 pyyaml>=6.0
+
+# CLI pipeline extras (transcription + translation — not needed for GUI)
+faster-whisper>=1.0.0
+deep-translator>=1.11.4

@@ -58,7 +58,33 @@ class VoiceCloneTranslator:
         self.translator = GoogleTranslator
         
         print("All models loaded successfully!")
-    
+
+    def setup_tts_only(self):
+        """Initialize TTS model only — no Whisper or translator."""
+        print("Loading TTS model... This may take a few minutes on first run.")
+        import torch
+        import torchaudio
+        # PyTorch 2.6+ changed weights_only default to True, which breaks TTS checkpoint loading.
+        _orig_load = torch.load
+        torch.load = lambda *a, **kw: _orig_load(*a, **{**kw, 'weights_only': kw.get('weights_only', False)})
+        # torchaudio 2.8+ defaults to torchcodec backend; fall back to soundfile if unavailable.
+        try:
+            import torchcodec  # noqa: F401
+        except ImportError:
+            import soundfile as sf
+            _orig_ta_load = torchaudio.load
+            def _sf_load(path, *a, **kw):
+                try:
+                    return _orig_ta_load(path, *a, **kw)
+                except Exception:
+                    data, sr = sf.read(str(path), dtype="float32", always_2d=True)
+                    return torch.from_numpy(data.T), sr
+            torchaudio.load = _sf_load
+        from TTS.api import TTS
+        self.tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(self.device)
+        torch.load = _orig_load  # restore after model is loaded
+        print("TTS model loaded successfully!")
+
     def validate_input_file(self, filepath: str, file_type: str = "audio/video") -> dict:
         """
         Validate input file before processing.
@@ -548,7 +574,11 @@ class VoiceCloneTranslator:
         speaker_audio_path: str,
         output_path: str,
         language: str = "en",
-        clear_cache: bool = False
+        clear_cache: bool = False,
+        speed: float = 1.0,
+        temperature: float = 0.85,
+        top_p: float = 0.85,
+        repetition_penalty: float = 5.0,
     ) -> str:
         """
         Clone a voice and generate speech with the cloned voice.
@@ -598,12 +628,15 @@ class VoiceCloneTranslator:
                     temp_output = output_path.replace('.wav', f'_chunk_{i}.wav')
                     
                     # Try using tts() for better control
+                    _voice_kwargs = dict(speed=speed, temperature=temperature,
+                                        top_p=top_p, repetition_penalty=repetition_penalty)
                     try:
                         wav = self.tts_model.tts(
                             text=chunk,
                             speaker_wav=speaker_audio_path,
                             language=language,
-                            split_sentences=False
+                            split_sentences=False,
+                            **_voice_kwargs
                         )
                         sf.write(temp_output, wav, 24000)
                     except (TypeError, AttributeError):
@@ -614,7 +647,8 @@ class VoiceCloneTranslator:
                                 speaker_wav=speaker_audio_path,
                                 language=language,
                                 file_path=temp_output,
-                                split_sentences=False
+                                split_sentences=False,
+                                **_voice_kwargs
                             )
                         except TypeError:
                             self.tts_model.tts_to_file(
@@ -644,22 +678,20 @@ class VoiceCloneTranslator:
                 print(f"  Generating speech in language: {language}")
                 
                 # Use tts() method for more control, then save manually
+                _voice_kwargs = dict(speed=speed, temperature=temperature,
+                                     top_p=top_p, repetition_penalty=repetition_penalty)
                 try:
                     print(f"  Using advanced generation mode for better language control...")
-                    # Generate audio directly (returns numpy array)
                     wav = self.tts_model.tts(
                         text=text,
                         speaker_wav=speaker_audio_path,
                         language=language,
-                        split_sentences=False  # Prevent per-sentence language detection
+                        split_sentences=False,
+                        **_voice_kwargs
                     )
-                    
-                    # Save to file
                     import soundfile as sf
-                    sf.write(output_path, wav, 24000)  # XTTS uses 24kHz
-                    
+                    sf.write(output_path, wav, 24000)
                 except (TypeError, AttributeError):
-                    # Fallback to tts_to_file if tts() doesn't work as expected
                     print(f"  Using fallback generation mode...")
                     try:
                         self.tts_model.tts_to_file(
@@ -667,7 +699,8 @@ class VoiceCloneTranslator:
                             speaker_wav=speaker_audio_path,
                             language=language,
                             file_path=output_path,
-                            split_sentences=False
+                            split_sentences=False,
+                            **_voice_kwargs
                         )
                     except TypeError:
                         self.tts_model.tts_to_file(
@@ -792,7 +825,11 @@ class VoiceCloneTranslator:
         output_dir: str = "output",
         language: str = "en",
         combined_output: str = None,
-        add_silence: float = 0.5
+        add_silence: float = 0.5,
+        speed: float = 1.0,
+        temperature: float = 0.85,
+        top_p: float = 0.85,
+        repetition_penalty: float = 5.0,
     ) -> dict:
         """
         Generate speech from multiple text files using different voices and combine them.
@@ -885,10 +922,14 @@ class VoiceCloneTranslator:
             # Generate speech directly with cached reference
             self.clone_voice(
                 text=text,
-                speaker_audio_path=cached_reference,  # Use pre-converted WAV
+                speaker_audio_path=cached_reference,
                 output_path=output_path,
                 language=segment_language,
-                clear_cache=should_clear_cache  # Clear cache for reused references
+                clear_cache=should_clear_cache,
+                speed=speed,
+                temperature=temperature,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
             )
             
             individual_outputs.append(output_path)

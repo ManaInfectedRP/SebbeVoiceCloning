@@ -20,11 +20,9 @@ cloner.setup_models()
 # Format: [(text_file, reference_audio, language), ...]
 # You can now use MP3, MP4, or any audio/video format - it auto-converts!
 conversation = [
-    ("speaker1_line1.txt", "test_audio.mp3", "en"),  # MP3 works!
-    ("speaker2_line1.txt", "test_audio_marcus.mp3", "en"),  # Different voice
-    ("speaker1_line2.txt", "test_audio.mp3", "en"),
-    ("speaker2_line2.txt", "test_audio_marcus.mp3", "en"),  # Fixed typo
+    ("shark.txt", "test_audio_marcus.mp3", "en")
 ]
+
 
 # Or mix formats:
 # conversation = [

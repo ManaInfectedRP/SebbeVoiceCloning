@@ -1,30 +1,29 @@
-# Voice Cloning with Translation
+# VoiceClone Studio
 
-A Python program that uses deep learning to clone voices and translate speech into different languages while maintaining the original speaker's voice characteristics.
+Clone any voice and synthesize speech from text. Supports multiple voices, multi-language output, and a standalone Windows GUI.
 
 ## Features
 
-- 🎤 **Voice Cloning**: Uses state-of-the-art Coqui TTS (XTTS-v2) for voice cloning
-- 🎬 **Video Support**: Extract audio from MP4 and other video formats
-- 🗣️ **Speech Recognition**: Automatic transcription using OpenAI Whisper
-- 🌍 **Multi-language Translation**: Translate to 100+ languages using deep-translator
-- 🔊 **Voice Synthesis**: Generate speech in target language with cloned voice
+- **Voice Cloning**: Coqui TTS (XTTS-v2) — zero-shot, no training required
+- **Multi-Voice**: Generate conversations with multiple different voices
+- **GUI**: Standalone Windows `.exe` with drag-and-drop workflow
+- **CLI**: Full pipeline — transcribe, translate, and clone from video/audio files
+- **17+ Languages**: en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh-cn, ja, hu, ko
+- **GPU Accelerated**: CUDA support for fast generation
 
-## Technology Stack
+## Requirements
 
-- **Voice Cloning**: Coqui TTS (XTTS-v2) - multilingual voice cloning
-- **Speech Recognition**: Faster Whisper - automatic speech recognition (4-5x faster than OpenAI Whisper)
-- **Translation**: deep-translator (Google Translate API)
-- **Audio Processing**: librosa, pydub, moviepy
-- **Deep Learning**: PyTorch
+- Python 3.11 (TTS does not support 3.12+)
+- FFmpeg (see below)
+- NVIDIA GPU recommended (CPU works but is slow)
+
+---
 
 ## Installation
 
-### 1. Install FFmpeg (Required)
+### 1. Install FFmpeg
 
-**Windows:**
-- Download from https://ffmpeg.org/download.html
-- Add to PATH
+**Windows:** Download from https://ffmpeg.org/download.html and add to PATH.
 
 **Linux:**
 ```bash
@@ -36,37 +35,71 @@ sudo apt-get install ffmpeg
 brew install ffmpeg
 ```
 
-### 2. Install Python Dependencies
+### 2. Create Python 3.11 virtual environment
+
+```bash
+py -3.11 -m venv venv311
+```
+
+### 3. Activate the venv
+
+**Bash:**
+```bash
+source ./venv311/Scripts/activate
+```
+
+**PowerShell:**
+```powershell
+.\venv311\Scripts\Activate.ps1
+```
+
+### 4. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-**Note**: First run will download models (~2GB), which may take some time.
+> First run downloads ~2GB of models automatically.
 
-## Usage
+---
 
-### Command Line
+## GUI (Recommended)
 
-#### Single File Processing
+### Run directly
+
+```bash
+py gui_app.py
+```
+
+### Build standalone .exe
+
+```bash
+build.bat
+```
+
+Output: `dist\VoiceClone\VoiceClone.exe` — share the whole `dist\VoiceClone\` folder.
+
+### How to use the GUI
+
+1. Type text (or click **Load .txt** to import a file) in a voice pair row
+2. Click **Browse...** to select a reference voice file (any audio/video format)
+3. Set the language per row
+4. Click **+ Add Voice Pair** to add more speakers
+5. Set output folder and silence gap between speakers
+6. Click **Generate**
+
+---
+
+## CLI
+
+### Single file (transcribe → translate → clone)
+
 ```bash
 py voice_clone_translator.py input_video.mp4 --target-lang es
 ```
 
-#### Batch Processing (Multiple Files)
-Process all audio/video files in a directory:
-```bash
-# Process all files in a directory
-py voice_clone_translator.py --batch my_videos/ --target-lang fr --output-dir batch_output
+### Text-to-speech
 
-# Process specific file types
-py voice_clone_translator.py --batch my_media/ --target-lang de --extensions .mp4 .mp3
-
-# Include subdirectories
-py voice_clone_translator.py --batch my_media/ --target-lang it --recursive
-```
-
-#### Text-to-Speech Mode
 ```bash
 py voice_clone_translator.py --text-mode my_text.txt \
     --reference-audio reference_voice.mp3 \
@@ -74,74 +107,52 @@ py voice_clone_translator.py --text-mode my_text.txt \
     --output my_speech.wav
 ```
 
-#### Multi-Voice Conversations
+### Multi-voice conversation
+
 ```bash
 py multi_voice_example.py
-# (edit conversation array in the script)
 ```
 
-#### Advanced Options
+### Batch processing
+
 ```bash
-py voice_clone_translator.py input_video.mp4 \
-    --target-lang fr \
-    --output-dir my_output \
-    --device cuda
+py voice_clone_translator.py --batch my_videos/ --target-lang fr --output-dir output
 ```
 
+### Force GPU
 
-### Supported Languages
+```bash
+py voice_clone_translator.py input.mp4 --target-lang de --device cuda
+```
 
-Common language codes:
-- `en` - English
-- `es` - Spanish
-- `fr` - French
-- `de` - German
-- `it` - Italian
-- `pt` - Portuguese
-- `pl` - Polish
-- `tr` - Turkish
-- `ru` - Russian
-- `nl` - Dutch
-- `cs` - Czech
-- `ar` - Arabic
-- `zh-cn` - Chinese (Simplified)
-- `ja` - Japanese
-- `hu` - Hungarian
-- `ko` - Korean
+---
 
-## Model Details
+## Supported Languages
 
-### Coqui TTS (XTTS-v2)
-- State-of-the-art multilingual voice cloning
-- Supports 17+ languages
-- Can clone voice from just a few seconds of audio
-- Zero-shot voice cloning (no training required)
+| Code | Language | Code | Language |
+|------|----------|------|----------|
+| `en` | English | `ru` | Russian |
+| `es` | Spanish | `nl` | Dutch |
+| `fr` | French | `cs` | Czech |
+| `de` | German | `ar` | Arabic |
+| `it` | Italian | `zh-cn` | Chinese |
+| `pt` | Portuguese | `ja` | Japanese |
+| `pl` | Polish | `hu` | Hungarian |
+| `tr` | Turkish | `ko` | Korean |
 
-### Faster Whisper
-- 4-5x faster than OpenAI Whisper with same accuracy
-- Lower memory usage (uses CTranslate2)
-- Robust speech recognition with VAD (Voice Activity Detection)
-- Automatic language detection
-- Handles multiple accents and audio qualities
+---
 
 ## Performance
 
-- **GPU Recommended**: Processing is much faster with CUDA-enabled GPU
-- **CPU Mode**: Works on CPU but slower (5-10x)
-- **Memory**: ~4GB RAM minimum, 8GB+ recommended
-- **First Run**: Downloads models (~2GB), subsequent runs are faster
+- **GPU**: Recommended — 4–10x faster than CPU
+- **CPU**: Works but slow
+- **RAM**: 4GB minimum, 8GB+ recommended
+- **First run**: Downloads XTTS-v2 model (~2GB)
+
+---
 
 ## License
 
-This project uses various open-source models and libraries. Please review their individual licenses:
 - Coqui TTS: Mozilla Public License 2.0
 - Faster Whisper: MIT License
 - deep-translator: Apache License 2.0
-
-## Credits
-
-Built with:
-- [Coqui TTS](https://github.com/coqui-ai/TTS)
-- [Faster Whisper](https://github.com/guillaumekln/faster-whisper)
-- [deep-translator](https://github.com/nidhaloff/deep-translator)
-# SebbeVoiceCloning

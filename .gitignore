@@ -24,7 +24,7 @@ wheels/
 *.egg
 
 # Virtual environments
-venv/
+venv311/
 ENV/
 env/
 
@@ -62,3 +62,5 @@ htmlcov/
 
 # Logs
 *.log
+
+/voices
