@@ -98,8 +98,6 @@ a = Analysis(
         'whisper',
         'deep_translator',
         'tkinter.test',
-        'test',
-        'unittest',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
